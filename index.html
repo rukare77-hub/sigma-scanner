@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>시그마 스캐너</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 레이아웃: 표 중심 스캐너. 각 행에 -3σ~+3σ 눈금자를 두고 현재 위치를 점으로 표시한다. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#0f1a24; --muted:#5a6776; --line:#d8dee5; --soft:#f4f6f8;
+  --up:#c5302d; --up-t1:rgba(197,48,45,.10); --up-t2:rgba(197,48,45,.22);
+  --down:#1d5cba; --down-t1:rgba(29,92,186,.10); --down-t2:rgba(29,92,186,.22);
+  --focus:#0f1a24; --warn-bg:#fff1bf; --warn-ink:#5a4300;
+  --font:"IBM Plex Sans KR",system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0c1319; --panel:#131c25; --ink:#e7edf3; --muted:#93a1b0; --line:#25313d; --soft:#192430;
+    --up:#ff7772; --up-t1:rgba(255,119,114,.12); --up-t2:rgba(255,119,114,.26);
+    --down:#74aaff; --down-t1:rgba(116,170,255,.12); --down-t2:rgba(116,170,255,.26);
+    --focus:#e7edf3; --warn-bg:#3b3009; --warn-ink:#f5dd8a; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font);
+  padding:24px max(16px,env(safe-area-inset-left,0px)) 56px max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+button,select,input{font:inherit;color:inherit}
+button:focus-visible,select:focus-visible,input:focus-visible,tr[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px}
+h1{margin:0;font-size:24px;letter-spacing:-.01em;text-wrap:balance}
+.stamp{font:12px var(--mono);color:var(--muted)}
+.explain{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.explain div{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0}
+.explain b{display:block;margin-bottom:2px}
+.explain span{color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 16px;cursor:pointer;color:var(--muted);font-weight:600;margin-bottom:-1px}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctl>label,.ctl>.lab{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.seg button{background:none;border:0;padding:6px 11px;cursor:pointer;border-right:1px solid var(--line);font-family:var(--mono);font-size:12.5px}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+select,input[type=search]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 9px;min-width:0}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.sum{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px}
+.sum small{display:block;color:var(--muted);font-size:12px}
+.sum strong{font:600 20px var(--mono)}
+.sum.u2 strong,.sum.u1 strong{color:var(--up)}
+.sum.d2 strong,.sum.d1 strong{color:var(--down)}
+.tablebox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr.row{cursor:pointer}
+tbody tr.row:hover{background:var(--soft)}
+tbody tr:last-child td{border-bottom:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+th.num{text-align:right}
+.nm b{font-weight:600}
+.nm small{display:block;color:var(--muted);font-size:12px}
+.tag{display:inline-block;font:11px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 5px;margin-left:6px;color:var(--muted)}
+.z{font-weight:600}
+.up{color:var(--up)} .dn{color:var(--down)}
+.gauge{position:relative;height:18px;min-width:180px;border-radius:3px;
+  background:linear-gradient(90deg,
+    var(--down-t2) 0 26.56%, var(--down-t1) 26.56% 34.38%, transparent 34.38% 65.62%,
+    var(--up-t1) 65.62% 73.44%, var(--up-t2) 73.44% 100%);
+  border:1px solid var(--line)}
+.gauge::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+.gauge i{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--ink);border:2px solid var(--panel)}
+.gauge i.up{background:var(--up)} .gauge i.dn{background:var(--down)}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;border:1px solid var(--line);color:var(--muted)}
+.pill.u1{color:var(--up);background:var(--up-t1);border-color:transparent}
+.pill.u2{color:var(--panel);background:var(--up);border-color:transparent}
+.pill.d1{color:var(--down);background:var(--down-t1);border-color:transparent}
+.pill.d2{color:var(--panel);background:var(--down);border-color:transparent}
+.streak{font:11px var(--mono);color:var(--muted);margin-left:6px}
+.detail td{background:var(--soft);padding:14px 16px}
+.dgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(220px,1fr);gap:18px}
+.dgrid dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 14px;align-content:start;font-size:13px}
+.dgrid dt{color:var(--muted)} .dgrid dd{margin:0;font-family:var(--mono);text-align:right;white-space:nowrap}
+.dgrid p{grid-column:1/-1;margin:8px 0 0;color:var(--muted);font-size:12.5px}
+svg.chart{width:100%;height:auto;display:block}
+svg.chart text{font:10px var(--mono);fill:var(--muted)}
+.c-grid{stroke:var(--line);stroke-width:1}
+.c-line{fill:none;stroke:var(--ink);stroke-width:1.6}
+.c-mean{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:4 3}
+.c-b1{fill:var(--line);opacity:.55}
+.c-b15{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:1 3}
+.c-zero{stroke:var(--muted);stroke-width:1}
+.c-t1{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.c-t15{stroke:var(--muted);stroke-width:1.2}
+.pairadd{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.pairadd button.add{background:var(--ink);color:var(--bg);border:0;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:600}
+.x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.empty{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px}
+.empty h2{margin:0 0 8px;font-size:17px}
+.empty ol{margin:8px 0 0;padding-left:20px}
+.notes{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:4px}
+.demo{background:var(--warn-bg);color:var(--warn-ink);border-radius:6px;padding:9px 14px;font-weight:600}
+.warn{border-left:3px solid var(--up);background:var(--panel);padding:8px 12px;border-radius:4px;font-size:13px}
+@media (max-width:700px){.dgrid{grid-template-columns:minmax(0,1fr)} h1{font-size:21px}}
+@media (prefers-reduced-motion:no-preference){.gauge i{transition:left .25s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>시그마 스캐너</h1>
+    <div class="stamp" id="stamp">데이터 불러오는 중…</div>
+  </header>
+
+  <div class="demo" id="demo" hidden>가상 데모 데이터입니다. 실제 시세가 아닙니다. README의 4단계로 실제 데이터를 한 번 받아 오면 이 띠가 사라집니다.</div>
+
+  <section class="explain" aria-label="용어 설명">
+    <div><b>Z-score (단일 자산)</b><span>자산 하나의 종가가 최근 N개 종가 평균에서 표준편차(σ)의 몇 배만큼 떨어져 있는지 봅니다. 로그 가격 기준입니다.</span></div>
+    <div><b>상대가치 비율</b><span>두 자산을 나눈 비율(A÷B)을 하나의 가격처럼 보고 같은 Z-score를 계산합니다. 비율 Z가 높으면 A가 B보다 평소 대비 비싸진 상태입니다.</span></div>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-single" data-tab="single" aria-selected="true">단일 자산 Z-score</button>
+    <button class="tab" role="tab" id="tab-ratio" data-tab="ratio" aria-selected="false">상대가치 비율</button>
+  </div>
+
+  <div class="controls">
+    <div class="ctl"><span class="lab">계산 구간</span>
+      <div class="seg" id="seg-win" role="group" aria-label="계산 구간"></div></div>
+    <div class="ctl"><span class="lab">가격 기준</span>
+      <div class="seg" id="seg-log" role="group" aria-label="가격 기준"></div></div>
+    <div class="ctl"><span class="lab">이탈 필터</span>
+      <div class="seg" id="seg-tier" role="group" aria-label="이탈 필터"></div></div>
+    <div class="ctl" id="catctl"><label for="cat">분류</label><select id="cat"></select></div>
+    <div class="ctl"><label for="sort">정렬</label>
+      <select id="sort">
+        <option value="abs">|Z| 큰 순</option>
+        <option value="hi">Z 높은 순 (상방)</option>
+        <option value="lo">Z 낮은 순 (하방)</option>
+        <option value="name">이름 순</option>
+      </select></div>
+    <div class="ctl"><label for="q">검색</label><input id="q" type="search" placeholder="티커·이름"></div>
+  </div>
+
+  <div class="pairadd" id="pairadd" hidden>
+    <span class="lab" style="font-size:12px;color:var(--muted)">내 비율 추가</span>
+    <select id="pa-num" aria-label="분자 자산"></select>
+    <span>÷</span>
+    <select id="pa-den" aria-label="분모 자산"></select>
+    <button class="add" id="pa-btn" type="button">추가</button>
+    <span id="pa-msg" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+  <div id="main"></div>
+
+  <div class="notes">
+    <span>색상은 한국 시장 관례를 따릅니다. 빨강은 평균 위(상방), 파랑은 평균 아래(하방)이며 좋고 나쁨의 뜻은 아닙니다.</span>
+    <span>정규분포라면 |Z|≥1은 전체의 약 32%, |Z|≥1.5는 약 13%, |Z|≥2는 약 5% 날에 나타납니다. 이탈은 매매 신호가 아니라 평소와 다른 정도를 보여주는 지표입니다. 추세가 강하면 이탈이 몇 주씩 이어집니다.</span>
+    <span>부동산은 일일 종가가 없어 상장 리츠·주택건설 ETF를 대용치로 씁니다. 비율은 두 자산에 모두 종가가 있는 날짜끼리만 계산하고, 암호화폐는 주말에도 거래되므로 같은 일수라도 기간이 짧습니다.</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+const WINDOWS=[20,60,120,252];
+const TIERS=[{v:0,l:"전체"},{v:1,l:"≥ 1σ"},{v:1.5,l:"≥ 1.5σ"},{v:2,l:"≥ 2σ"}];
+let DATA=null;
+const S={tab:"single",win:60,log:true,tier:0,cat:"all",q:"",sort:"abs",open:null,custom:[]};
+
+/* ---------- 계산 ---------- */
+function zAt(x,i,N){
+  if(i<N-1||N<3)return null;
+  let s=0;for(let j=i-N+1;j<=i;j++)s+=x[j];
+  const m=s/N;let v=0;for(let j=i-N+1;j<=i;j++){const d=x[j]-m;v+=d*d}
+  const sd=Math.sqrt(v/(N-1));
+  return sd>0?{z:(x[i]-m)/sd,m,sd}:null;
+}
+function analyze(dates,level,N){
+  const n=level.length;
+  if(n<N+1)return null;
+  const T=S.log?Math.log:(v=>v),B=S.log?Math.exp:(v=>v);
+  const x=level.map(T);
+  const r=zAt(x,n-1,N);
+  if(!r)return null;
+  const side=Math.sign(r.z);
+  let streak=0;
+  if(Math.abs(r.z)>=1){
+    for(let k=n-1;k>=0&&streak<90;k--){
+      const q=zAt(x,k,N);
+      if(q&&Math.sign(q.z)===side&&Math.abs(q.z)>=1)streak++;else break;
+    }
+  }
+  return {date:dates[n-1],level:level[n-1],chg:level[n-1]/level[n-2]-1,z:r.z,N,n,streak,
+    mean:B(r.m),lo1:B(r.m-r.sd),hi1:B(r.m+r.sd),lo15:B(r.m-1.5*r.sd),hi15:B(r.m+1.5*r.sd),
+    dates,series:level,x,B};
+}
+function ratioSeries(a,b){
+  const mb=new Map();b.dates.forEach((d,i)=>mb.set(d,b.close[i]));
+  const dates=[],level=[];
+  a.dates.forEach((d,i)=>{const v=mb.get(d);if(v!==undefined){dates.push(d);level.push(a.close[i]/v)}});
+  return {dates,level};
+}
+
+/* ---------- 행 만들기 ---------- */
+function singleRows(){
+  const rows=[];
+  for(const [id,a] of Object.entries(DATA.assets)){
+    const r=analyze(a.dates,a.close,S.win);
+    if(!r)continue;
+    rows.push({key:id,name:a.name,sub:id,cat:a.category,r,kind:"single",stale:!!a.stale});
+  }
+  return rows;
+}
+function allPairs(){
+  const out=(DATA.pairs||[]).map(p=>({num:p.a,den:p.b,label:p.name,custom:false}));
+  S.custom.forEach(p=>out.push({num:p[0],den:p[1],label:`${nm(p[0])} ÷ ${nm(p[1])}`,custom:true}));
+  return out;
+}
+function nm(id){return DATA.assets[id]?DATA.assets[id].name:id}
+function ratioRows(){
+  const rows=[];
+  for(const p of allPairs()){
+    const a=DATA.assets[p.num],b=DATA.assets[p.den];
+    if(!a||!b)continue;
+    const s=ratioSeries(a,b);
+    const r=analyze(s.dates,s.level,S.win);
+    if(!r)continue;
+    rows.push({key:p.num+"/"+p.den,name:p.label,sub:`${p.num} ÷ ${p.den}`,cat:"ratio",r,kind:"ratio",custom:p.custom,num:p.num,den:p.den,stale:!!(a.stale||b.stale)});
+  }
+  return rows;
+}
+
+/* ---------- 표시 도우미 ---------- */
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function fmt(v){
+  if(v==null||!isFinite(v))return "—";
+  const a=Math.abs(v),d=a>=100?2:a>=1?3:a>=0.01?5:7;
+  return v.toLocaleString("en-US",{minimumFractionDigits:Math.min(2,d),maximumFractionDigits:d});
+}
+const pct=v=>(v>=0?"+":"")+(v*100).toFixed(2)+"%";
+const zf=z=>(z>=0?"+":"")+z.toFixed(2);
+function stat(z){
+  if(z>=2)return {c:"u2",l:"상방 2σ 이탈"};
+  if(z>=1.5)return {c:"u2",l:"상방 1.5σ 이탈"};
+  if(z>=1)return {c:"u1",l:"상방 1σ 이탈"};
+  if(z<=-2)return {c:"d2",l:"하방 2σ 이탈"};
+  if(z<=-1.5)return {c:"d2",l:"하방 1.5σ 이탈"};
+  if(z<=-1)return {c:"d1",l:"하방 1σ 이탈"};
+  return {c:"in",l:"범위 내"};
+}
+const sideCls=v=>v>0?"up":v<0?"dn":"";
+function gaugeHTML(z){
+  const c=Math.max(-3.2,Math.min(3.2,z));
+  return `<div class="gauge" role="img" aria-label="Z ${zf(z)}"><i class="${Math.abs(z)>=1?sideCls(z):""}" style="left:${((c+3.2)/6.4*100).toFixed(2)}%"></i></div>`;
+}
+
+/* ---------- 렌더 ---------- */
+function visible(rows){
+  const q=S.q.trim().toLowerCase();
+  let out=rows.filter(r=>Math.abs(r.r.z)>=S.tier);
+  if(S.tab==="single"&&S.cat!=="all")out=out.filter(r=>r.cat===S.cat);
+  if(q)out=out.filter(r=>(r.name+" "+r.sub).toLowerCase().includes(q));
+  const f={abs:(a,b)=>Math.abs(b.r.z)-Math.abs(a.r.z),hi:(a,b)=>b.r.z-a.r.z,lo:(a,b)=>a.r.z-b.r.z,name:(a,b)=>a.name.localeCompare(b.name,"ko")}[S.sort];
+  return out.sort(f);
+}
+function renderSummary(rows){
+  const c={u2:0,u1:0,d1:0,d2:0,in:0};
+  rows.forEach(r=>c[stat(r.r.z).c]++);
+  const box=(cls,l,n)=>`<div class="sum ${cls}"><small>${l}</small><strong>${n}</strong></div>`;
+  document.getElementById("summary").innerHTML=
+    box("u2","상방 1.5σ 이상",c.u2)+box("u1","상방 1~1.5σ",c.u1)+box("in","범위 내",c.in)+box("d1","하방 1~1.5σ",c.d1)+box("d2","하방 1.5σ 이상",c.d2);
+}
+function render(){
+  if(!DATA)return;
+  const main=document.getElementById("main");
+  const all=S.tab==="single"?singleRows():ratioRows();
+  renderSummary(all);
+  const rows=visible(all);
+  const isR=S.tab==="ratio";
+  let h=`<div class="tablebox"><table><thead><tr>
+    <th>${isR?"비율 (A ÷ B)":"자산"}</th><th>기준일</th><th class="num">${isR?"현재 비율":"종가"}</th><th class="num">전일비</th>
+    <th class="num">Z</th><th>-3σ ← → +3σ</th><th>상태</th></tr></thead><tbody>`;
+  if(!rows.length)h+=`<tr><td colspan="7" style="padding:24px;color:var(--muted)">조건에 맞는 항목이 없습니다. 이탈 필터를 "전체"로 바꿔 보세요.</td></tr>`;
+  for(const r of rows){
+    const st=stat(r.r.z),open=S.open===r.key;
+    h+=`<tr class="row" tabindex="0" data-key="${esc(r.key)}" aria-expanded="${open}">
+      <td class="nm"><b>${esc(r.name)}</b>${r.stale?'<span class="tag" title="이번 수집에 실패해 이전 값을 쓰는 중">이전 값</span>':""}${r.custom?'<button class="x" data-del="'+esc(r.key)+'" title="삭제" aria-label="내 비율 삭제">×</button>':""}<small>${esc(r.sub)}${r.kind==="single"?" · "+esc(r.cat):""}</small></td>
+      <td class="num" style="text-align:left">${r.r.date}</td>
+      <td class="num">${fmt(r.r.level)}</td>
+      <td class="num ${sideCls(r.r.chg)}">${pct(r.r.chg)}</td>
+      <td class="num z ${Math.abs(r.r.z)>=1?sideCls(r.r.z):""}">${zf(r.r.z)}</td>
+      <td>${gaugeHTML(r.r.z)}</td>
+      <td><span class="pill ${st.c}">${st.l}</span>${r.r.streak>1?`<span class="streak">${r.r.streak>=90?"90일+":r.r.streak+"일"} 연속</span>`:r.r.streak===1?'<span class="streak">오늘 신규</span>':""}</td></tr>`;
+    if(open)h+=`<tr class="detail"><td colspan="7">${detailHTML(r)}</td></tr>`;
+  }
+  h+="</tbody></table></div>";
+  main.innerHTML=h;
+}
+function detailHTML(r){
+  const a=r.r;
+  let note="";
+  if(r.kind==="ratio")note=`<p>비율이 오르면 ${esc(nm(r.num))}이(가) ${esc(nm(r.den))} 대비 비싸지는 것이고, 내리면 싸지는 것입니다. 두 자산 모두 종가가 있는 ${a.n}개 날짜로 계산했습니다.</p>`;
+  return `<div class="dgrid"><div>${chartSVG(a)}</div>
+  <dl><dt>계산 구간</dt><dd>${a.N}일</dd>
+  <dt>기준</dt><dd>${S.log?"로그":"단순"} 가격</dd>
+  <dt>구간 평균</dt><dd>${fmt(a.mean)}</dd>
+  <dt>+1σ / −1σ</dt><dd>${fmt(a.hi1)} / ${fmt(a.lo1)}</dd>
+  <dt>+1.5σ / −1.5σ</dt><dd>${fmt(a.hi15)} / ${fmt(a.lo15)}</dd>
+  <dt>현재 Z</dt><dd>${zf(a.z)}</dd>
+  <dt>데이터 개수</dt><dd>${a.n}</dd>${note}</dl></div>`;
+}
+function chartSVG(a){
+  const N=a.N,n=a.series.length,B=a.B;
+  const show=Math.min(n-(N-1),Math.max(N*3,150),400);
+  const start=n-show;
+  const W=760,H=390,L=56,R=10,T0=10,T1=240,B0=266,B1=360;
+  const pts=[];
+  for(let i=start;i<n;i++){const q=zAt(a.x,i,N);if(q)pts.push({i,v:a.series[i],q})}
+  if(pts.length<2)return "";
+  let lo=Infinity,hi=-Infinity;
+  pts.forEach(p=>{lo=Math.min(lo,p.v,B(p.q.m-1.5*p.q.sd));hi=Math.max(hi,p.v,B(p.q.m+1.5*p.q.sd))});
+  const pad=(hi-lo)*.04;lo-=pad;hi+=pad;
+  const X=k=>L+(W-L-R)*k/(pts.length-1);
+  const Y=v=>T1-(T1-T0)*(v-lo)/(hi-lo);
+  const Z=z=>{const c=Math.max(-3.5,Math.min(3.5,z));return B0+(B1-B0)*(3.5-c)/7};
+  const path=f=>pts.map((p,k)=>(k?"L":"M")+X(k).toFixed(1)+" "+f(p).toFixed(1)).join("");
+  const band=m=>path(p=>Y(B(p.q.m+m*p.q.sd)));
+  const bandRev=m=>pts.slice().reverse().map((p,k)=>"L"+X(pts.length-1-k).toFixed(1)+" "+Y(B(p.q.m-m*p.q.sd)).toFixed(1)).join("");
+  let g="";
+  for(let t=0;t<=4;t++){const v=lo+(hi-lo)*t/4;g+=`<line class="c-grid" x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L-6}" y="${Y(v)+3}" text-anchor="end">${fmt(v)}</text>`}
+  const xl=[0,.33,.66,1].map(f=>{const k=Math.round((pts.length-1)*f);return `<text x="${X(k)}" y="${H-12}" text-anchor="${f===0?"start":f===1?"end":"middle"}">${a.dates[pts[k].i]}</text>`}).join("");
+  const zl=[[3,""],[1.5,"c-t15"],[1,"c-t1"],[0,"c-zero"],[-1,"c-t1"],[-1.5,"c-t15"],[-3,""]].map(([z,c])=>c?`<line class="${c}" x1="${L}" x2="${W-R}" y1="${Z(z)}" y2="${Z(z)}"/><text x="${L-6}" y="${Z(z)+3}" text-anchor="end">${z>0?"+":""}${z}σ</text>`:`<text x="${L-6}" y="${Z(z)+3}" text-anchor="end">${z>0?"+":""}${z}</text>`).join("");
+  const last=pts[pts.length-1];
+  const dot=Math.abs(last.q.z)>=1?(last.q.z>0?"var(--up)":"var(--down)"):"var(--ink)";
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="최근 ${pts.length}일의 값과 ±1σ, ±1.5σ 범위, 아래에 Z-score 추이">
+  ${g}<path class="c-b1" d="${band(1)}${bandRev(1)}Z"/>
+  <path class="c-b15" d="${band(1.5)}"/><path class="c-b15" d="${path(p=>Y(B(p.q.m-1.5*p.q.sd)))}"/>
+  <path class="c-mean" d="${path(p=>Y(B(p.q.m)))}"/>
+  <path class="c-line" d="${path(p=>Y(p.v))}"/>
+  <circle cx="${X(pts.length-1)}" cy="${Y(last.v)}" r="3.5" fill="${dot}"/>
+  ${zl}<path class="c-line" d="${path(p=>Z(p.q.z))}"/>
+  <circle cx="${X(pts.length-1)}" cy="${Z(last.q.z)}" r="3.5" fill="${dot}"/>
+  ${xl}</svg>`;
+}
+
+/* ---------- 컨트롤 ---------- */
+function seg(el,items,get,set){
+  el.innerHTML=items.map(i=>`<button type="button" data-v="${i.v}" aria-pressed="${String(get())===String(i.v)}">${i.l}</button>`).join("");
+  el.onclick=e=>{const b=e.target.closest("button");if(!b)return;set(b.dataset.v);seg(el,items,get,set);render()};
+}
+function setupControls(){
+  seg(document.getElementById("seg-win"),WINDOWS.map(v=>({v,l:v+"일"})),()=>S.win,v=>{S.win=+v;save()});
+  seg(document.getElementById("seg-log"),[{v:"log",l:"로그"},{v:"lin",l:"단순"}],()=>S.log?"log":"lin",v=>{S.log=v==="log";save()});
+  seg(document.getElementById("seg-tier"),TIERS,()=>S.tier,v=>{S.tier=+v;save()});
+  document.getElementById("cat").onchange=e=>{S.cat=e.target.value;render()};
+  document.getElementById("sort").onchange=e=>{S.sort=e.target.value;render()};
+  document.getElementById("q").oninput=e=>{S.q=e.target.value;render()};
+  document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+    S.tab=t.dataset.tab;S.open=null;
+    document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",String(x===t)));
+    document.getElementById("catctl").hidden=S.tab!=="single";
+    document.getElementById("pairadd").hidden=S.tab!=="ratio";
+    render();
+  });
+  document.getElementById("main").addEventListener("click",e=>{
+    const del=e.target.closest("[data-del]");
+    if(del){e.stopPropagation();const k=del.dataset.del;S.custom=S.custom.filter(p=>p[0]+"/"+p[1]!==k);save();S.open=null;render();return}
+    const tr=e.target.closest("tr.row");if(!tr)return;
+    S.open=S.open===tr.dataset.key?null:tr.dataset.key;render();
+  });
+  document.getElementById("main").addEventListener("keydown",e=>{
+    if((e.key==="Enter"||e.key===" ")&&e.target.matches("tr.row")){e.preventDefault();e.target.click()}
+  });
+  document.getElementById("pa-btn").onclick=()=>{
+    const a=document.getElementById("pa-num").value,b=document.getElementById("pa-den").value,m=document.getElementById("pa-msg");
+    if(a===b){m.textContent="서로 다른 자산을 고르세요.";return}
+    if(allPairs().some(p=>p.num===a&&p.den===b)){m.textContent="이미 목록에 있습니다.";return}
+    S.custom.push([a,b]);save();m.textContent="";S.open=a+"/"+b;render();
+  };
+}
+function fillSelects(){
+  const cats=[...new Set(Object.values(DATA.assets).map(a=>a.category))];
+  document.getElementById("cat").innerHTML=`<option value="all">전체</option>`+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  const opts=Object.entries(DATA.assets).map(([id,a])=>`<option value="${esc(id)}">${esc(id)} · ${esc(a.name)}</option>`).join("");
+  document.getElementById("pa-num").innerHTML=opts;document.getElementById("pa-den").innerHTML=opts;
+  if(DATA.assets.SPY)document.getElementById("pa-den").value="SPY";
+}
+function save(){try{localStorage.setItem("sigma.v2",JSON.stringify({win:S.win,log:S.log,tier:S.tier,custom:S.custom}))}catch(e){}}
+function load(){try{const j=JSON.parse(localStorage.getItem("sigma.v2")||"{}");
+  if(WINDOWS.includes(j.win))S.win=j.win;if(typeof j.log==="boolean")S.log=j.log;if([0,1,1.5,2].includes(j.tier))S.tier=j.tier;
+  if(Array.isArray(j.custom))S.custom=j.custom.filter(p=>Array.isArray(p)&&p.length===2)}catch(e){}}
+
+/* ---------- 시작 ---------- */
+function showEmpty(msg){
+  document.getElementById("stamp").textContent="데이터 없음";
+  document.getElementById("main").innerHTML=`<div class="empty"><h2>시세 데이터를 불러오지 못했습니다</h2><p>${esc(msg)}</p>
+  <ol><li>GitHub 저장소의 <b>Actions</b> 탭을 엽니다.</li><li>왼쪽에서 <b>데이터 업데이트</b>를 선택하고 <b>Run workflow</b> 버튼을 누릅니다.</li><li>1~3분 뒤 이 페이지를 새로고침합니다.</li></ol></div>`;
+}
+async function getJSON(url){
+  const res=await fetch(url,{cache:"no-store"});
+  if(!res.ok)throw new Error(url+" HTTP "+res.status);
+  return res.json();
+}
+async function start(){
+  load();setupControls();
+  try{DATA=await getJSON("data/data.json")}
+  catch(e1){
+    try{DATA=await getJSON("data/demo.json")}
+    catch(e2){showEmpty("파일을 읽지 못했습니다 ("+e1.message+"). 폴더에서 index.html을 직접 열었다면 GitHub Pages 웹 주소로 접속해야 합니다.");return}
+  }
+  if(!DATA.assets||!Object.keys(DATA.assets).length){showEmpty("데이터 파일이 비어 있습니다.");return}
+  document.getElementById("demo").hidden=!DATA.demo;
+  const last=Object.values(DATA.assets).map(a=>a.dates[a.dates.length-1]).sort();
+  const gen=new Date(DATA.generated_at);
+  document.getElementById("stamp").textContent=`최신 종가 ${last[last.length-1]} · 수집 ${isNaN(gen)?"-":gen.toLocaleString("ko-KR",{dateStyle:"medium",timeStyle:"short"})}${DATA.demo?" · 데모":""}`;
+  const errs=Object.keys(DATA.errors||{});
+  if(errs.length){
+    const w=document.createElement("div");w.className="warn";
+    w.textContent=`이번 수집에서 ${errs.length}개 자산을 가져오지 못했습니다(이전 값 유지 또는 제외): `+errs.join(", ");
+    document.querySelector(".controls").before(w);
+  }
+  fillSelects();render();
+}
+start();
+</script>
+</body>
+</html>
