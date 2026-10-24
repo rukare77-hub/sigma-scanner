@@ -92,7 +92,30 @@ def fetch_yahoo(asset, years):
     url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
            f"{urllib.parse.quote(asset['symbol'])}?period1={start}&period2={now}"
            "&interval=1d&includePrePost=false&events=div%2Csplit")
-    return parse_yahoo(http_get_json(url), now)
+    payload = http_get_json(url)
+    if asset["symbol"] in DEBUG_SYMBOLS:
+        debug_yahoo(asset["symbol"], payload, now)
+    return parse_yahoo(payload, now)
+
+
+# 일부 자산은 야후가 돌려준 원본 값을 로그에 그대로 찍어 날짜 문제를 점검한다
+DEBUG_SYMBOLS = {"SPY", "META", "BTC-USD", "005930.KS"}
+
+
+def debug_yahoo(symbol, payload, now):
+    try:
+        iso = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%m-%d %H:%M:%SZ")
+        res = payload["chart"]["result"][0]
+        meta = res.get("meta") or {}
+        ts = res.get("timestamp") or []
+        closes = res["indicators"]["quote"][0]["close"]
+        reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+        print(f"  [점검 {symbol}] 지금={iso(now)} 마지막시세시각={iso(meta['regularMarketTime']) if meta.get('regularMarketTime') else None}"
+              f" 현재가={meta.get('regularMarketPrice')} 정규장={iso(reg['start']) if reg.get('start') else None}~{iso(reg['end']) if reg.get('end') else None}")
+        for t, c in list(zip(ts, closes))[-3:]:
+            print(f"  [점검 {symbol}] 봉 {iso(t)} 종가={c}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  [점검 {symbol}] 실패: {e}")
 
 
 # ---------------------------------------------------------------- Binance
