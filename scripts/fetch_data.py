@@ -85,10 +85,21 @@ def parse_yahoo(payload, now_ts, strict=False):
 
     # 끝난 날인데 종가가 null 이면 야후의 일시적 누락이다
     if closes and closes[-1] is None:
-        day = dt.datetime.fromtimestamp(ts[-1] + offset, dt.timezone.utc).date().isoformat()
-        if strict:
-            raise MissingBar(f"야후가 {day} 종가를 비워서 보냈습니다")
-        print(f"  [경고] 야후가 {day} 종가를 비워서 보냈습니다. 그 날은 빼고 계산합니다")
+        day_date = dt.datetime.fromtimestamp(ts[-1] + offset, dt.timezone.utc).date()
+        day = day_date.isoformat()
+        # 1) 장이 끝난 뒤 마지막 거래가(regularMarketPrice)가 그날 종가와 같으므로 그 값으로 채운다
+        rmt, rmp = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
+        filled = False
+        if rmt and rmp and rmp > 0 and now_ts - rmt > 900:
+            if dt.datetime.fromtimestamp(rmt + offset, dt.timezone.utc).date() == day_date:
+                closes = list(closes[:-1]) + [float(rmp)]
+                filled = True
+                print(f"  [보정] 야후가 {day} 종가를 비워서 보내 마지막 거래가 {rmp}로 채웠습니다")
+        # 2) 채울 수 없으면 오류로 알리거나(재시도·대체 출처) 그 날을 뺀다
+        if not filled:
+            if strict:
+                raise MissingBar(f"야후가 {day} 종가를 비워서 보냈습니다")
+            print(f"  [경고] 야후가 {day} 종가를 비워서 보냈습니다. 그 날은 빼고 계산합니다")
 
     rows = []
     for t, c in zip(ts, closes):
