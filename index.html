@@ -109,7 +109,24 @@ svg.chart text{font:10px var(--mono);fill:var(--muted)}
 .notes{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:4px}
 .demo{background:var(--warn-bg);color:var(--warn-ink);border-radius:6px;padding:9px 14px;font-weight:600}
 .warn{border-left:3px solid var(--up);background:var(--panel);padding:8px 12px;border-radius:4px;font-size:13px}
-@media (max-width:700px){.dgrid{grid-template-columns:minmax(0,1fr)} h1{font-size:21px}}
+#main{display:flex;flex-direction:column;gap:16px}
+.tabs{overflow-x:auto}.tab{white-space:nowrap}
+.muted{color:var(--muted)}
+.btnote{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:11px 14px;font-size:13px;color:var(--muted)}
+.btnote b{color:var(--ink)}
+.btcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.btcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.btcard h3{margin:0;font-size:14px}
+.btcard .big{font:600 28px var(--mono)}
+.btcard .big small{font:400 12px var(--font);color:var(--muted)}
+.btcard dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+.btcard dt{color:var(--muted)}.btcard dd{margin:0;font-family:var(--mono);text-align:right}
+.verdict{font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;color:var(--muted)}
+.dgrid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.dgrid2>div{min-width:0}
+.bar-up{fill:var(--up)}.bar-dn{fill:var(--down)}
+thead th[rowspan],thead th[colspan]{vertical-align:bottom}
+@media (max-width:700px){.dgrid{grid-template-columns:minmax(0,1fr)} h1{font-size:21px} .tab{padding:10px 11px;font-size:13px}}
 @media (prefers-reduced-motion:no-preference){.gauge i{transition:left .25s}}
 </style>
 </head>
@@ -130,6 +147,7 @@ svg.chart text{font:10px var(--mono);fill:var(--muted)}
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-single" data-tab="single" aria-selected="true">단일 자산 Z-score</button>
     <button class="tab" role="tab" id="tab-ratio" data-tab="ratio" aria-selected="false">상대가치 비율</button>
+    <button class="tab" role="tab" id="tab-bt" data-tab="bt" aria-selected="false">과거 성과 (백테스트)</button>
   </div>
 
   <div class="controls">
@@ -137,17 +155,27 @@ svg.chart text{font:10px var(--mono);fill:var(--muted)}
       <div class="seg" id="seg-win" role="group" aria-label="계산 구간"></div></div>
     <div class="ctl"><span class="lab">가격 기준</span>
       <div class="seg" id="seg-log" role="group" aria-label="가격 기준"></div></div>
-    <div class="ctl"><span class="lab">이탈 필터</span>
+    <div class="ctl" id="ctl-tier"><span class="lab">이탈 필터</span>
       <div class="seg" id="seg-tier" role="group" aria-label="이탈 필터"></div></div>
     <div class="ctl" id="catctl"><label for="cat">분류</label><select id="cat"></select></div>
-    <div class="ctl"><label for="sort">정렬</label>
+    <div class="ctl" id="ctl-sort"><label for="sort">정렬</label>
       <select id="sort">
         <option value="abs">|Z| 큰 순</option>
         <option value="hi">Z 높은 순 (상방)</option>
         <option value="lo">Z 낮은 순 (하방)</option>
         <option value="name">이름 순</option>
       </select></div>
-    <div class="ctl"><label for="q">검색</label><input id="q" type="search" placeholder="티커·이름"></div>
+    <div class="ctl" id="ctl-q"><label for="q">검색</label><input id="q" type="search" placeholder="티커·이름"></div>
+    <div class="ctl" id="ctl-tgt" hidden><span class="lab">대상</span><div class="seg" id="seg-tgt" role="group" aria-label="분석 대상"></div></div>
+    <div class="ctl" id="ctl-thr" hidden><span class="lab">진입 기준</span><div class="seg" id="seg-thr" role="group" aria-label="진입 기준"></div></div>
+    <div class="ctl" id="ctl-hold" hidden><span class="lab">보유 기간</span><div class="seg" id="seg-hold" role="group" aria-label="보유 기간"></div></div>
+    <div class="ctl" id="ctl-btsort" hidden><label for="btsort">정렬</label>
+      <select id="btsort">
+        <option value="n">이벤트 많은 순</option>
+        <option value="buy">매수 후 평균 높은 순</option>
+        <option value="sell">매도 후 하락 큰 순</option>
+        <option value="name">이름 순</option>
+      </select></div>
   </div>
 
   <div class="pairadd" id="pairadd" hidden>
@@ -174,7 +202,7 @@ svg.chart text{font:10px var(--mono);fill:var(--muted)}
 const WINDOWS=[20,60,120,252];
 const TIERS=[{v:0,l:"전체"},{v:1,l:"≥ 1σ"},{v:1.5,l:"≥ 1.5σ"},{v:2,l:"≥ 2σ"}];
 let DATA=null;
-const S={tab:"single",win:60,log:true,tier:0,cat:"all",q:"",sort:"abs",open:null,custom:[]};
+const S={tab:"single",win:60,log:true,tier:0,cat:"all",q:"",sort:"abs",open:null,custom:[],thr:2,hold:20,tgt:"single",btsort:"n"};
 
 /* ---------- 계산 ---------- */
 function zAt(x,i,N){
@@ -281,6 +309,7 @@ function renderSummary(rows){
 }
 function render(){
   if(!DATA)return;
+  if(S.tab==="bt"){renderBT();return}
   const main=document.getElementById("main");
   const all=S.tab==="single"?singleRows():ratioRows();
   renderSummary(all);
@@ -361,14 +390,17 @@ function setupControls(){
   seg(document.getElementById("seg-win"),WINDOWS.map(v=>({v,l:v+"일"})),()=>S.win,v=>{S.win=+v;save()});
   seg(document.getElementById("seg-log"),[{v:"log",l:"로그"},{v:"lin",l:"단순"}],()=>S.log?"log":"lin",v=>{S.log=v==="log";save()});
   seg(document.getElementById("seg-tier"),TIERS,()=>S.tier,v=>{S.tier=+v;save()});
+  seg(document.getElementById("seg-tgt"),[{v:"single",l:"단일 자산"},{v:"ratio",l:"상대가치 비율"}],()=>S.tgt,v=>{S.tgt=v;S.open=null;syncControls();save()});
+  seg(document.getElementById("seg-thr"),THRS.map(v=>({v,l:"±"+v+"σ"})),()=>S.thr,v=>{S.thr=+v;S.open=null;save()});
+  seg(document.getElementById("seg-hold"),HORIZONS.map(v=>({v,l:v+"일"})),()=>S.hold,v=>{S.hold=+v;save()});
+  document.getElementById("btsort").onchange=e=>{S.btsort=e.target.value;render()};
   document.getElementById("cat").onchange=e=>{S.cat=e.target.value;render()};
   document.getElementById("sort").onchange=e=>{S.sort=e.target.value;render()};
   document.getElementById("q").oninput=e=>{S.q=e.target.value;render()};
   document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
     S.tab=t.dataset.tab;S.open=null;
     document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",String(x===t)));
-    document.getElementById("catctl").hidden=S.tab!=="single";
-    document.getElementById("pairadd").hidden=S.tab!=="ratio";
+    syncControls();
     render();
   });
   document.getElementById("main").addEventListener("click",e=>{
@@ -394,10 +426,217 @@ function fillSelects(){
   document.getElementById("pa-num").innerHTML=opts;document.getElementById("pa-den").innerHTML=opts;
   if(DATA.assets.SPY)document.getElementById("pa-den").value="SPY";
 }
-function save(){try{localStorage.setItem("sigma.v2",JSON.stringify({win:S.win,log:S.log,tier:S.tier,custom:S.custom}))}catch(e){}}
+function save(){try{localStorage.setItem("sigma.v2",JSON.stringify({win:S.win,log:S.log,tier:S.tier,custom:S.custom,thr:S.thr,hold:S.hold,tgt:S.tgt}))}catch(e){}}
 function load(){try{const j=JSON.parse(localStorage.getItem("sigma.v2")||"{}");
   if(WINDOWS.includes(j.win))S.win=j.win;if(typeof j.log==="boolean")S.log=j.log;if([0,1,1.5,2].includes(j.tier))S.tier=j.tier;
+  if([1,1.5,2].includes(j.thr))S.thr=j.thr;if([5,10,20,60].includes(j.hold))S.hold=j.hold;if(j.tgt==="single"||j.tgt==="ratio")S.tgt=j.tgt;
   if(Array.isArray(j.custom))S.custom=j.custom.filter(p=>Array.isArray(p)&&p.length===2)}catch(e){}}
+
+/* ---------- 과거 성과 (이벤트 스터디) ---------- */
+const HORIZONS=[5,10,20,60];
+const THRS=[1,1.5,2];
+let BT={key:null,res:null};
+const p1=v=>isFinite(v)?(v>=0?"+":"")+(v*100).toFixed(1)+"%":"—";
+const p0=v=>isFinite(v)?(v*100).toFixed(0)+"%":"—";
+
+function btSeries(){
+  if(S.tgt==="ratio"){
+    const out=[];
+    for(const p of allPairs()){
+      const a=DATA.assets[p.num],b=DATA.assets[p.den];
+      if(!a||!b)continue;
+      const s=ratioSeries(a,b);
+      out.push({key:p.num+"/"+p.den,name:p.label,sub:`${p.num} ÷ ${p.den}`,cat:"ratio",dates:s.dates,level:s.level});
+    }
+    return out;
+  }
+  return Object.entries(DATA.assets).map(([id,a])=>({key:id,name:a.name,sub:id,cat:a.category,dates:a.dates,level:a.close}));
+}
+/* 시점별 Z: i번째 값은 i까지의 N개 값만 사용한다(미래 데이터 없음). 누적합으로 빠르게 계산한다. */
+function zSeries(level,N,useLog){
+  const n=level.length,z=new Float64Array(n).fill(NaN);
+  if(n<N+1)return z;
+  const x=new Float64Array(n);
+  for(let i=0;i<n;i++)x[i]=useLog?Math.log(level[i]):level[i];
+  const x0=x[0],ps=new Float64Array(n+1),ps2=new Float64Array(n+1);
+  for(let i=0;i<n;i++){const d=x[i]-x0;ps[i+1]=ps[i]+d;ps2[i+1]=ps2[i]+d*d}
+  for(let i=N-1;i<n;i++){
+    const s=ps[i+1]-ps[i+1-N],s2=ps2[i+1]-ps2[i+1-N],m=s/N;
+    const v=(s2-N*m*m)/(N-1);
+    if(v>1e-14)z[i]=((x[i]-x0)-m)/Math.sqrt(v);
+  }
+  return z;
+}
+function btAnalyze(s,N,useLog,thr){
+  const lv=s.level,n=lv.length,z=zSeries(lv,N,useLog);
+  const base={},ev={};
+  for(const H of HORIZONS){
+    let cnt=0,sum=0,up=0,dn=0;
+    for(let i=N-1;i+H<n;i++){
+      if(Number.isNaN(z[i]))continue;
+      const r=lv[i+H]/lv[i]-1;
+      cnt++;sum+=r;if(r>0)up++;else if(r<0)dn++;
+    }
+    base[H]={cnt,sum,up,dn};
+  }
+  /* 처음 닿은 날: 오늘은 기준 밖이고 어제는 기준 안인 날 */
+  const raw={buy:[],sell:[]};
+  for(let i=N-1;i<n;i++){
+    if(Number.isNaN(z[i]))continue;
+    const pv=i>0?z[i-1]:NaN;
+    if(z[i]<=-thr&&!(pv<=-thr))raw.buy.push(i);
+    if(z[i]>=thr&&!(pv>=thr))raw.sell.push(i);
+  }
+  for(const H of HORIZONS){
+    ev[H]={buy:[],sell:[]};
+    for(const side of ["buy","sell"]){
+      let last=-1e9;
+      for(const i of raw[side]){
+        if(i<last+H)continue;      /* 앞 이벤트의 보유기간과 겹치면 제외 */
+        if(i+H>=n)continue;        /* 아직 H일이 지나지 않은 이벤트는 제외 */
+        last=i;
+        const p=lv[i];let mn=0,mx=0;
+        for(let j=i+1;j<=i+H;j++){const r=lv[j]/p-1;if(r<mn)mn=r;if(r>mx)mx=r}
+        ev[H][side].push({i,date:s.dates[i],z:z[i],p,r:lv[i+H]/p-1,mn,mx});
+      }
+    }
+  }
+  return {s,base,ev,nRaw:{buy:raw.buy.length,sell:raw.sell.length}};
+}
+function btCompute(){
+  const key=[S.tgt,S.win,S.log,S.thr,JSON.stringify(S.custom),Object.keys(DATA.assets).length].join("|");
+  if(BT.key===key)return BT.res;
+  const res=btSeries().map(s=>btAnalyze(s,S.win,S.log,S.thr));
+  BT.key=key;BT.res=res;
+  return res;
+}
+function summarize(evs,side,b){
+  const n=evs.length;
+  const bm=b&&b.cnt?b.sum/b.cnt:NaN;
+  const bhit=b&&b.cnt?(side==="buy"?b.up:b.dn)/b.cnt:NaN;
+  if(!n)return {n:0,bm,bhit};
+  const r=evs.map(e=>e.r),mean=r.reduce((a,c)=>a+c,0)/n;
+  const sorted=[...r].sort((a,c)=>a-c);
+  const med=n%2?sorted[(n-1)/2]:(sorted[n/2-1]+sorted[n/2])/2;
+  let v=0;for(const x of r)v+=(x-mean)*(x-mean);
+  const sd=n>1?Math.sqrt(v/(n-1)):NaN;
+  const hit=(side==="buy"?r.filter(x=>x>0).length:r.filter(x=>x<0).length)/n;
+  const mn=evs.reduce((a,e)=>a+e.mn,0)/n,mx=evs.reduce((a,e)=>a+e.mx,0)/n;
+  const diff=mean-bm,t=sd>0?diff/(sd/Math.sqrt(n)):NaN;
+  return {n,mean,med,sd,hit,mn,mx,bm,bhit,diff,t,worst:sorted[0],best:sorted[n-1]};
+}
+function verdict(st){
+  if(!st.n)return "이벤트 없음";
+  if(st.n<10)return "표본 부족 (10건 미만)";
+  if(!(Math.abs(st.t)>=2))return "모든 날 평균과 차이가 우연과 구분되지 않음";
+  return st.diff>0?"모든 날 평균보다 높음 (통계적으로 유의)":"모든 날 평균보다 낮음 (통계적으로 유의)";
+}
+function strip(evs){
+  const e=evs.slice(-60);
+  if(!e.length)return `<div class="muted" style="font-size:12.5px">해당 이벤트가 없습니다.</div>`;
+  const W=360,Hh=110,mid=Hh/2,m=Math.max(...e.map(x=>Math.abs(x.r)),0.01);
+  const bw=Math.min(14,(W-8)/e.length);
+  const bars=e.map((x,k)=>{
+    const h=Math.abs(x.r)/m*(mid-8),y=x.r>=0?mid-h:mid;
+    return `<rect class="${x.r>=0?"bar-up":"bar-dn"}" x="${(4+k*bw).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1,bw-1.5).toFixed(1)}" height="${Math.max(h,0.5).toFixed(1)}"/>`;
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="이벤트별 ${S.hold}일 후 변화 막대(시간순, 최근 ${e.length}건)"><line class="c-zero" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>${bars}<text x="4" y="10">${p1(m)}</text><text x="4" y="${Hh-2}">${p1(-m)}</text></svg>`;
+}
+function evTable(evs,isR){
+  const e=evs.slice(-12).reverse();
+  if(!e.length)return "";
+  return `<div class="tablebox" style="margin-top:8px"><table style="min-width:0"><thead><tr><th>진입일</th><th class="num">진입 Z</th><th class="num">진입 ${isR?"비율":"종가"}</th><th class="num">${S.hold}일 뒤</th><th class="num">구간 최저</th><th class="num">구간 최고</th></tr></thead><tbody>`+
+  e.map(x=>`<tr><td class="num" style="text-align:left">${x.date}</td><td class="num">${zf(x.z)}</td><td class="num">${fmt(x.p)}</td><td class="num ${sideCls(x.r)}">${p1(x.r)}</td><td class="num dn">${p1(x.mn)}</td><td class="num up">${p1(x.mx)}</td></tr>`).join("")+
+  `</tbody></table></div>`;
+}
+function btDetail(r){
+  const isR=S.tgt==="ratio",H=S.hold;
+  const col=(side,title)=>{
+    const evs=r.ev[H][side],st=summarize(evs,side,r.base[H]);
+    return `<div><b>${title}</b>
+      <div class="muted" style="font-size:12.5px;margin:2px 0 6px">${st.n?`${st.n}건 · 평균 ${p1(st.mean)} · 최악 ${p1(side==="buy"?st.worst:st.best)} · 첫 이탈 ${r.nRaw[side]}회 중 겹침·미완료 제외`:"이벤트가 없습니다."}</div>
+      ${strip(evs)}${evTable(evs,isR)}</div>`;
+  };
+  return `<div class="dgrid2">${col("buy",`Z ≤ −${S.thr}σ 첫 도달 후 ${H}일`)}${col("sell",`Z ≥ +${S.thr}σ 첫 도달 후 ${H}일`)}</div>
+  <p class="muted" style="font-size:12.5px;margin:10px 0 0">막대는 이벤트별 ${H}일 뒤 가격 변화(시간순)입니다. 빨강은 상승, 파랑은 하락입니다. 표의 "최악"은 매수 쪽은 가장 크게 하락한 사례, 매도 쪽은 가장 크게 상승한 사례입니다.</p>`;
+}
+function renderBT(){
+  document.getElementById("summary").innerHTML="";
+  const main=document.getElementById("main");
+  const all=btCompute();
+  const res=all.filter(r=>S.tgt!=="single"||S.cat==="all"||r.s.cat===S.cat);
+  const H=S.hold,thr=S.thr,isR=S.tgt==="ratio";
+  const lens=all.map(r=>r.s.level.length/252).sort((a,b)=>a-b);
+  const years=lens.length?lens[Math.floor(lens.length/2)]:0;
+  const pool=(h,side)=>{
+    const evs=[],b={cnt:0,sum:0,up:0,dn:0};
+    for(const r of res){
+      for(const e of r.ev[h][side])evs.push(e);
+      const x=r.base[h];b.cnt+=x.cnt;b.sum+=x.sum;b.up+=x.up;b.dn+=x.dn;
+    }
+    return summarize(evs,side,b);
+  };
+  const noun=isR?"비율":"가격";
+  const buy=pool(H,"buy"),sell=pool(H,"sell");
+  let h="";
+  if(years<6)h+=`<div class="warn">수집된 데이터가 중앙값 기준 약 ${years.toFixed(1)}년뿐이라 이벤트 수가 적습니다. 정확한 비교를 위해 config.json의 history_years를 10으로 늘리고 데이터 업데이트를 다시 실행하세요.</div>`;
+  h+=`<div class="btnote"><b>읽는 법.</b> Z가 ${S.win}일 기준으로 −${thr}σ 이하로 <b>처음 내려간 날</b>(전날은 기준 위)의 종가에 샀다면, 또는 +${thr}σ 이상으로 <b>처음 올라간 날</b>의 종가에 팔았다면 그 뒤 ${H}거래일 동안 ${noun}이 어떻게 움직였는지 모았습니다. Z는 그날까지의 데이터로만 계산했고, 앞 이벤트의 보유기간과 겹치는 이벤트는 뺐습니다. "모든 날 평균"은 같은 기간 아무 날에나 샀을 때의 평균으로, 이벤트가 이보다 나았는지 비교하는 기준입니다.${S.tgt==="single"&&S.cat!=="all"?` 현재 분류: ${esc(S.cat)}.`:""}</div>`;
+  const card=(side,st,title,hitLabel)=>`<div class="btcard"><h3>${title}</h3>
+    <div class="big ${st.n?sideCls(st.mean):""}">${st.n?p1(st.mean):"—"}<small> 평균 ${H}일 뒤 ${noun} 변화</small></div>
+    <dl><dt>이벤트 수</dt><dd>${st.n}${S.tgt==="single"?` (자산 ${new Set(res.filter(r=>r.ev[H][side].length).map(r=>r.s.key)).size}개)`:""}</dd>
+    <dt>중앙값</dt><dd>${st.n?p1(st.med):"—"}</dd>
+    <dt>${hitLabel}</dt><dd>${st.n?p0(st.hit):"—"} <span class="muted">(모든 날 ${p0(st.bhit)})</span></dd>
+    <dt>모든 날 평균</dt><dd>${p1(st.bm)}</dd>
+    <dt>모든 날 평균과 차이</dt><dd>${st.n?p1(st.diff):"—"}</dd>
+    <dt>구간 내 평균 최저 / 최고</dt><dd>${st.n?p1(st.mn)+" / "+p1(st.mx):"—"}</dd></dl>
+    <div class="verdict">${verdict(st)}</div></div>`;
+  h+=`<div class="btcards">${card("buy",buy,`매수 후보: Z ≤ −${thr}σ 첫 도달`,"상승한 비율")}${card("sell",sell,`매도 후보: Z ≥ +${thr}σ 첫 도달`,"하락한 비율")}</div>`;
+  /* 보유 기간별 */
+  h+=`<div class="tablebox"><table style="min-width:640px"><thead><tr><th rowspan="2">보유 기간</th><th colspan="5" style="text-align:center">−${thr}σ 첫 도달 (매수 후보)</th><th colspan="5" style="text-align:center">+${thr}σ 첫 도달 (매도 후보)</th></tr><tr>
+    <th class="num">건수</th><th class="num">평균</th><th class="num">중앙값</th><th class="num">상승</th><th class="num">모든 날</th>
+    <th class="num">건수</th><th class="num">평균</th><th class="num">중앙값</th><th class="num">하락</th><th class="num">모든 날</th></tr></thead><tbody>`;
+  for(const k of HORIZONS){
+    const a=pool(k,"buy"),b=pool(k,"sell"),cur=k===H?' style="background:var(--soft);font-weight:600"':"";
+    const cells=(st)=>`<td class="num">${st.n}</td><td class="num ${st.n?sideCls(st.mean):""}">${st.n?p1(st.mean):"—"}</td><td class="num">${st.n?p1(st.med):"—"}</td><td class="num">${st.n?p0(st.hit):"—"}</td><td class="num muted">${p1(st.bm)}</td>`;
+    h+=`<tr${cur}><td class="num" style="text-align:left">${k}일</td>${cells(a)}${cells(b)}</tr>`;
+  }
+  h+=`</tbody></table></div>`;
+  /* 자산별 */
+  const rows=res.map(r=>({r,a:summarize(r.ev[H].buy,"buy",r.base[H]),b:summarize(r.ev[H].sell,"sell",r.base[H])}));
+  const nz=(v,d)=>Number.isFinite(v)?v:d;
+  const sorters={
+    n:(x,y)=>(y.a.n+y.b.n)-(x.a.n+x.b.n),
+    buy:(x,y)=>nz(y.a.mean,-9)-nz(x.a.mean,-9),
+    sell:(x,y)=>nz(x.b.mean,9)-nz(y.b.mean,9),
+    name:(x,y)=>x.r.s.name.localeCompare(y.r.s.name,"ko")
+  };
+  rows.sort(sorters[S.btsort]||sorters.n);
+  h+=`<div class="tablebox"><table><thead><tr><th rowspan="2">${isR?"비율 (A ÷ B)":"자산"}</th><th rowspan="2" class="num">모든 날<br>${H}일 평균</th><th colspan="3" style="text-align:center">−${thr}σ 첫 도달</th><th colspan="3" style="text-align:center">+${thr}σ 첫 도달</th></tr><tr>
+    <th class="num">건수</th><th class="num">평균</th><th class="num">상승</th><th class="num">건수</th><th class="num">평균</th><th class="num">하락</th></tr></thead><tbody>`;
+  if(!rows.length)h+=`<tr><td colspan="8" style="padding:24px;color:var(--muted)">표시할 항목이 없습니다.</td></tr>`;
+  for(const x of rows){
+    const open=S.open===x.r.s.key;
+    h+=`<tr class="row" tabindex="0" data-key="${esc(x.r.s.key)}" aria-expanded="${open}">
+      <td class="nm"><b>${esc(x.r.s.name)}</b><small>${esc(x.r.s.sub)}${isR?"":" · "+esc(x.r.s.cat)}</small></td>
+      <td class="num muted">${p1(x.a.bm)}</td>
+      <td class="num">${x.a.n}</td><td class="num ${x.a.n?sideCls(x.a.mean):""}">${x.a.n?p1(x.a.mean):"—"}</td><td class="num">${x.a.n?p0(x.a.hit):"—"}</td>
+      <td class="num">${x.b.n}</td><td class="num ${x.b.n?sideCls(x.b.mean):""}">${x.b.n?p1(x.b.mean):"—"}</td><td class="num">${x.b.n?p0(x.b.hit):"—"}</td></tr>`;
+    if(open)h+=`<tr class="detail"><td colspan="8">${btDetail(x.r)}</td></tr>`;
+  }
+  h+=`</tbody></table></div>`;
+  h+=`<div class="notes"><span>과거 결과이며 앞으로를 보장하지 않습니다. 수수료·세금·슬리피지를 반영하지 않았고, 종가에 체결된다고 가정했습니다.</span>
+  <span>지금 목록에 있는 자산만 분석하므로 중간에 사라진 자산이 빠져 결과가 좋게 나올 수 있습니다(생존 편향).</span>
+  <span>2020년 3월처럼 여러 자산이 같은 시기에 한꺼번에 이탈하는 경우가 많아, 합산 이벤트 수만큼 독립된 표본이 있는 것은 아닙니다. 건수가 적은 자산의 평균은 우연일 수 있습니다.</span>
+  <span>"우연과 구분되지 않음"은 평균 차이를 단순 t값(2 미만)으로 본 것입니다.</span></div>`;
+  main.innerHTML=h;
+}
+function syncControls(){
+  const bt=S.tab==="bt";
+  ["ctl-tier","ctl-sort","ctl-q"].forEach(id=>{document.getElementById(id).hidden=bt});
+  ["ctl-thr","ctl-hold","ctl-tgt","ctl-btsort"].forEach(id=>{document.getElementById(id).hidden=!bt});
+  document.getElementById("catctl").hidden=!(S.tab==="single"||(bt&&S.tgt==="single"));
+  document.getElementById("pairadd").hidden=!(S.tab==="ratio"||(bt&&S.tgt==="ratio"));
+}
 
 /* ---------- 시작 ---------- */
 function showEmpty(msg){
@@ -428,7 +667,7 @@ async function start(){
     w.textContent=`이번 수집에서 ${errs.length}개 자산을 가져오지 못했습니다(이전 값 유지 또는 제외): `+errs.join(", ");
     document.querySelector(".controls").before(w);
   }
-  fillSelects();render();
+  fillSelects();syncControls();render();
 }
 start();
 </script>
