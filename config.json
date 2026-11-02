@@ -1,6 +1,6 @@
 {
   "_설명": "자산을 추가하려면 assets 목록에 한 줄을 복사해 symbol(Yahoo Finance 티커)과 name, category만 바꾸세요. 비율 쌍은 pairs에서 a÷b 형태로 추가합니다.",
-  "history_years": 3,
+  "history_years": 10,
   "assets": [
     {"symbol": "GLD",  "name": "금 ETF (SPDR Gold)",        "category": "금·원자재"},
     {"symbol": "GC=F", "name": "금 선물 (연결)",             "category": "금·원자재"},
